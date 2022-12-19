@@ -4,8 +4,8 @@ int main(void)
 {  
     FILE *fp;  
     HANDLE uart ;
-    char temp,rec_cnt;  
-    char buf[100];  
+    char temp,rec_cnt,bufp;  
+    unsigned char buf[100];  
     char wbuf[10] = "text2send" ;
     unsigned int length ;
     COMMTIMEOUTS T_out ;
@@ -33,14 +33,18 @@ int main(void)
     
     if(SetCommState(uart,&b_set)) puts("UART SET SUCCESS \n");
     
+    for(bufp = 0;bufp < 100;bufp++) buf[bufp] = bufp ;
+    
 	while(1)  
     {  
         temp=0;  
         rec_cnt ++ ;
-        
-		if(ReadFile(uart,buf,100,&length,NULL)) puts("Rx fail \n");
-		printf("%d time cyc , read %d bytes , %d \n",rec_cnt,length,buf[0]);  
-		 
+        if(WriteFile(uart,buf,100,&length,NULL)) puts("Tx");
+		if(ReadFile(uart,buf,100,&length,NULL)) puts("Rx");
+		printf("%d time cyc , read %d bytes \n",rec_cnt,length,buf[0]);
+		for(bufp = 0;bufp < 100;bufp++) printf("0x%x",buf[bufp]);  
+		printf("\n"); 
+		Sleep(500);
     }  
     return 0;  
 }  
