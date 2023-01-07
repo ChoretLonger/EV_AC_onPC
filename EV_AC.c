@@ -47,16 +47,36 @@ static const unsigned int crc32_tab[] = {
 	0xb40bbe37, 0xc30c8ea1, 0x5a05df1b, 0x2d02ef8d
 };
 
+char temp,rec_cnt;  
+char bufp;
+unsigned char sendbuf[127];  
+unsigned char recbuf[100];
+unsigned int crc32val ;
+unsigned int length ;
+
+void make_frame(unsigned char f_length,unsigned char type)
+{
+	unsigned char makep ;
+	for(makep = 2;makep < (f_length+2);makep++) sendbuf[makep] = makep ;// 0-100
+    sendbuf[0] = f_length ;//0,1-100
+    sendbuf[1] = type ;//0,1,2-100
+    crc32val = 0xffffffff ;
+    for (makep = 0;  makep < (f_length+2);  makep++) {
+		crc32val = crc32_tab[(crc32val ^ sendbuf[makep]) & 0xFF] ^ ((crc32val >> 8) & 0x00FFFFFF);
+	}//crc 0-100
+    
+    for(makep = (f_length+6);makep > 3;makep--) sendbuf[makep] = sendbuf[makep-4] ;//0-101 -- 4-105
+    sendbuf[3] =~ ((crc32val >> 24) & 0xff) ;
+    sendbuf[2] =~ ((crc32val >> 16) & 0xff) ;
+    sendbuf[1] =~ ((crc32val >> 8) & 0xff) ;
+    sendbuf[0] =~ (crc32val  & 0xff) ;
+}
+
 int main(void)  
 {  
     FILE *fp;  
     HANDLE uart ;
-    char temp,rec_cnt,bufp;  
-    unsigned char sendbuf[105];  
-    unsigned char recbuf[100];
-    unsigned int crc;
-    unsigned int crc32val ;
-    unsigned int length ;
+    unsigned char flen ;
     COMMTIMEOUTS T_out ;
     DCB b_set ;
     
@@ -82,29 +102,17 @@ int main(void)
     
     if(SetCommState(uart,&b_set)) puts("UART SET SUCCESS \n");
     
-    for(bufp = 0;bufp < 102;bufp++) sendbuf[bufp] = bufp ;
-    crc = 0 ;
-    sendbuf[0] = 99 ;
-    crc32val = 0xffffffff ;
-    for (bufp = 0;  bufp < 101;  bufp++) {
-		crc32val = crc32_tab[(crc32val ^ sendbuf[bufp]) & 0xFF] ^ ((crc32val >> 8) & 0x00FFFFFF);
-	}
-    
-    for(bufp = 105;bufp > 3;bufp--) sendbuf[bufp] = sendbuf[bufp-4] ;
-    sendbuf[3] =~ ((crc32val >> 24) & 0xff) ;
-    sendbuf[2] =~ ((crc32val >> 16) & 0xff) ;
-    sendbuf[1] =~ ((crc32val >> 8) & 0xff) ;
-    sendbuf[0] =~ (crc32val  & 0xff) ;
-    //sendbuf[4] = 100 ;
+    flen = 50 ;
+    make_frame(flen,2);
     
 	while(1)  
     {  
         temp=0;  
         rec_cnt ++ ;
-        if(WriteFile(uart,sendbuf,105,&length,NULL)) puts("Tx");
-		if(ReadFile(uart,recbuf,105,&length,NULL)) puts("Rx");
-		printf("%d time cyc , read %d bytes \n",rec_cnt,length,recbuf[0]);
-		for(bufp = 0;bufp < 105;bufp++) printf("0x%x  ",recbuf[bufp]);  
+        if(WriteFile(uart,sendbuf,(flen+6),&length,NULL)) puts("Tx");
+		if(ReadFile(uart,recbuf,(flen+6),&length,NULL)) puts("Rx");
+		printf("%d time cyc , read %d bytes \n",rec_cnt,(flen+6),recbuf[0]);
+		for(bufp = 0;bufp < (flen+6);bufp++) printf("0x%x  ",recbuf[bufp]);  
 		printf("\n"); 
 		Sleep(3000);
     }  
