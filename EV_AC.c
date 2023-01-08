@@ -54,29 +54,97 @@ unsigned char recbuf[100];
 unsigned int crc32val ;
 unsigned int length ;
 
-void make_frame(unsigned char f_length,unsigned char type)
+unsigned char flen , cr3c,cr2c,cr1c,cr0c ;
+HANDLE uart ;
+
+unsigned char echo_req[4] = {0xd0,0xee,0x01,0x00} ;
+unsigned char login[4] = {0xd0,0xee,0x02,0x00} ;
+unsigned char device_ID[8] = {0x00,0x01,0x02,0x03,0x04,0x05,0x06,0x07} ;
+unsigned char rannum[8] = {0x0f,0xf0,0x01,0x10,0x0e,0xe0,0x02,0x20} ;
+unsigned char soft_ver[4] = {0x01,0x02,0x03,0x04} ;
+unsigned char hard_ver[4] = {0x40,0x30,0x20,0x10} ;
+
+void tx_crc(unsigned char crclen)
 {
-	unsigned char makep ;
-	for(makep = 2;makep < (f_length+2);makep++) sendbuf[makep] = makep ;// 0-100
-    sendbuf[0] = f_length ;//0,1-100
-    sendbuf[1] = type ;//0,1,2-100
-    crc32val = 0xffffffff ;
-    for (makep = 0;  makep < (f_length+2);  makep++) {
-		crc32val = crc32_tab[(crc32val ^ sendbuf[makep]) & 0xFF] ^ ((crc32val >> 8) & 0x00FFFFFF);
-	}//crc 0-100
+	unsigned char crcp ;
+	crc32val = 0xffffffff ;
+    for (crcp = 0;  crcp < (crclen+2);  crcp++) {
+		crc32val = crc32_tab[(crc32val ^ sendbuf[crcp]) & 0xFF] ^ ((crc32val >> 8) & 0x00FFFFFF);
+	}
     
-    for(makep = (f_length+6);makep > 3;makep--) sendbuf[makep] = sendbuf[makep-4] ;//0-101 -- 4-105
+    for(crcp = (crclen+6);crcp > 3;crcp--) sendbuf[crcp] = sendbuf[crcp-4] ;
     sendbuf[3] =~ ((crc32val >> 24) & 0xff) ;
     sendbuf[2] =~ ((crc32val >> 16) & 0xff) ;
     sendbuf[1] =~ ((crc32val >> 8) & 0xff) ;
     sendbuf[0] =~ (crc32val  & 0xff) ;
 }
 
+void echo_frame()
+{
+	unsigned char makep , f_length ;
+	f_length = 4 ;
+	for(makep = 2;makep < (f_length+2);makep++) sendbuf[makep] = echo_req[makep-2] ;
+    sendbuf[0] = f_length ;
+    sendbuf[1] = 2 ;
+    tx_crc(f_length) ;
+}
+
+void login_frame()
+{
+	unsigned char makep , f_length ;
+	f_length = 28 ;
+	for(makep = 2;makep < 6;makep++) sendbuf[makep] = login[makep-2] ;
+	for(makep = 6;makep < 14;makep++) sendbuf[makep] = device_ID[makep-6] ;
+	for(makep = 14;makep < 18;makep++) sendbuf[makep] = hard_ver[makep-14] ;
+	for(makep = 18;makep < 22;makep++) sendbuf[makep] = soft_ver[makep-18] ;
+	for(makep = 22;makep < 30;makep++) sendbuf[makep] = rannum[makep-22] ;
+    sendbuf[0] = f_length ;
+    sendbuf[1] = 2 ;
+    tx_crc(f_length) ;
+}
+
+void TRx()
+{
+	if(WriteFile(uart,sendbuf,(flen+6),&length,NULL)) 
+    {
+    	printf("Tx %d bytes \n",length);
+	    for(bufp = 0;bufp < (flen+6);bufp++) printf("0x%x ",sendbuf[bufp]); 
+	    printf("\n"); 
+	}
+	else puts("Tx fail");
+	
+	if(ReadFile(uart,recbuf,100,&length,NULL)) 
+	{
+		printf("Rx %d bytes \n",length);
+	    for(bufp = 0;bufp < length;bufp++) printf("0x%x ",recbuf[bufp]); 
+		printf("\n"); 
+		crc32val = 0xffffffff ;
+        for (bufp = 4;  bufp < length;  bufp++) {
+		    crc32val = crc32_tab[(crc32val ^ recbuf[bufp]) & 0xFF] ^ ((crc32val >> 8) & 0x00FFFFFF);
+	    }
+	    cr0c = ~(crc32val  & 0xff) ;
+	    cr1c = ~((crc32val >> 8) & 0xff) ;
+	    cr2c = ~((crc32val >> 16) & 0xff) ;
+	    cr3c = ~((crc32val >> 24) & 0xff) ;
+	    if((recbuf[3] != cr3c) |(recbuf[2] !=cr2c) |(recbuf[1] !=cr1c) |(recbuf[0] !=cr0c) )
+		{
+			puts("Rx CRC fail");
+			puts("Rx CRC");
+			for(bufp = 0;bufp < 4;bufp++) printf("0x%x ",recbuf[bufp]);printf("\n");
+			puts("local CRC");
+			printf("0x%x ", cr0c);
+			printf("0x%x ", cr1c);
+			printf("0x%x ", cr2c);
+			printf("0x%x ", cr3c);printf("\n");
+		}
+		else puts("Rx CRC PASS");
+	}
+	else puts("Rx fail");
+}
+
 int main(void)  
 {  
     FILE *fp;  
-    HANDLE uart ;
-    unsigned char flen ;
     COMMTIMEOUTS T_out ;
     DCB b_set ;
     
@@ -102,19 +170,15 @@ int main(void)
     
     if(SetCommState(uart,&b_set)) puts("UART SET SUCCESS \n");
     
-    flen = 50 ;
-    make_frame(flen,2);
+    flen = 28 ;
+    //echo_frame();
     
-	while(1)  
-    {  
-        temp=0;  
-        rec_cnt ++ ;
-        if(WriteFile(uart,sendbuf,(flen+6),&length,NULL)) puts("Tx");
-		if(ReadFile(uart,recbuf,(flen+6),&length,NULL)) puts("Rx");
-		printf("%d time cyc , read %d bytes \n",rec_cnt,(flen+6),recbuf[0]);
-		for(bufp = 0;bufp < (flen+6);bufp++) printf("0x%x  ",recbuf[bufp]);  
-		printf("\n"); 
-		Sleep(3000);
-    }  
+    login_frame();
+    TRx();
+    
+    flen = 28 ;
+	
+    while(1)  
+    {  }  
     return 0;  
 }  
