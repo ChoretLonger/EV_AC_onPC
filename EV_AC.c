@@ -58,7 +58,9 @@ unsigned char flen , cr3c,cr2c,cr1c,cr0c ;
 HANDLE uart ;
 
 unsigned char echo_req[4] = {0xd0,0xee,0x01,0x00} ;
-unsigned char login[4] = {0xd0,0xee,0x02,0x00} ;
+unsigned char prepare_login[4] = {0xd0,0xee,0x02,0x00} ;
+unsigned char login[4] = {0xd0,0xee,0x03,0x00} ;
+
 unsigned char device_ID[8] = {0x00,0x01,0x02,0x03,0x04,0x05,0x06,0x07} ;
 unsigned char rannum[8] = {0x0f,0xf0,0x01,0x10,0x0e,0xe0,0x02,0x20} ;
 unsigned char soft_ver[4] = {0x01,0x02,0x03,0x04} ;
@@ -87,13 +89,14 @@ void echo_frame()
     sendbuf[0] = f_length ;
     sendbuf[1] = 2 ;
     tx_crc(f_length) ;
+	flen = f_length ;
 }
 
-void login_frame()
+void prepare_login_frame()
 {
 	unsigned char makep , f_length ;
 	f_length = 28 ;
-	for(makep = 2;makep < 6;makep++) sendbuf[makep] = login[makep-2] ;
+	for(makep = 2;makep < 6;makep++) sendbuf[makep] = prepare_login[makep-2] ;
 	for(makep = 6;makep < 14;makep++) sendbuf[makep] = device_ID[makep-6] ;
 	for(makep = 14;makep < 18;makep++) sendbuf[makep] = hard_ver[makep-14] ;
 	for(makep = 18;makep < 22;makep++) sendbuf[makep] = soft_ver[makep-18] ;
@@ -101,18 +104,24 @@ void login_frame()
     sendbuf[0] = f_length ;
     sendbuf[1] = 2 ;
     tx_crc(f_length) ;
+    flen = f_length ;
 }
 
-void TRx()
+void login_frame()
 {
-	if(WriteFile(uart,sendbuf,(flen+6),&length,NULL)) 
-    {
-    	printf("Tx %d bytes \n",length);
-	    for(bufp = 0;bufp < (flen+6);bufp++) printf("0x%x ",sendbuf[bufp]); 
-	    printf("\n"); 
-	}
-	else puts("Tx fail");
-	
+	unsigned char makep , f_length ;
+	f_length = 20 ;
+	for(makep = 2;makep < 6;makep++) sendbuf[makep] = login[makep-2] ;
+	for(makep = 6;makep < 14;makep++) sendbuf[makep] = device_ID[makep-6] ;
+	for(makep = 14;makep < 22;makep++) sendbuf[makep] = recbuf[makep+20] ;
+    sendbuf[0] = f_length ;
+    sendbuf[1] = 2 ;
+    tx_crc(f_length) ;
+    flen = f_length ;
+}
+
+void Rx()
+{
 	if(ReadFile(uart,recbuf,100,&length,NULL)) 
 	{
 		printf("Rx %d bytes \n",length);
@@ -140,6 +149,21 @@ void TRx()
 		else puts("Rx CRC PASS");
 	}
 	else puts("Rx fail");
+}
+void Tx()
+{
+	if(WriteFile(uart,sendbuf,(flen+6),&length,NULL)) 
+    {
+    	printf("Tx %d bytes \n",length);
+	    for(bufp = 0;bufp < (flen+6);bufp++) printf("0x%x ",sendbuf[bufp]); 
+	    printf("\n"); 
+	}
+	else puts("Tx fail");
+}
+void TRx()
+{
+	Tx();
+	Rx();
 }
 
 int main(void)  
@@ -170,15 +194,37 @@ int main(void)
     
     if(SetCommState(uart,&b_set)) puts("UART SET SUCCESS \n");
     
-    flen = 28 ;
+    //flen = 28 ;
     //echo_frame();
     
-    login_frame();
+    puts("prepare login frame \n");
+    prepare_login_frame();
     TRx();
     
-    flen = 28 ;
+    
+    puts("login frame \n");
+    login_frame();
+    TRx();
+    //struct charging_sign_in_prepare_respond {
+    //    struct charging_respond_header header;
+
+    //    /* from prepare request*/
+    //    struct charging_device_id device_id;
+    //    uint64_t prepare_random_number;
+
+    //    /* from server*/
+    //    struct charging_server_software_version server_version;
+    //    uint64_t random_number;
+	//};
+    
+    
+    //flen = 28 ;
 	
     while(1)  
-    {  }  
+    {
+    	//sleep(2);
+    	//echo_frame();
+    	//TRx();
+	}  
     return 0;  
 }  
